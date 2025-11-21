@@ -63,8 +63,9 @@ public class MyTestWatcher implements TestWatcher, TestExecutionListener {
     // For regular tests, use the method name
     // Display name examples: "[1] flaky@example.com", "[2] valid@example.com", "methodName()"
     if (displayName != null && !displayName.equals(methodName + "()")) {
-      // This is a parameterized test - use display name with parameters
-      return className + "#" + displayName;
+      // This is a parameterized test - include both method name and parameters
+      // Result: "ClassName#methodName[1] paramValue"
+      return className + "#" + methodName + displayName;
     }
 
     return className + "#" + methodName;
@@ -78,9 +79,10 @@ public class MyTestWatcher implements TestWatcher, TestExecutionListener {
   public void testPlanExecutionFinished(TestPlan testPlan) {
     // Filter for flaky tests: count > 1 AND last status is PASSED
     List<Entry<String, Data>> flakyTests = getTracker().entrySet().stream()
-        .filter(it -> it.getValue().getCount() > 1)
-        .filter(it -> "PASSED".equals(it.getValue().getLastStatus()))
-        .collect(Collectors.toList());
+            .filter(it -> it.getValue().getCount() > 1)
+            .filter(it -> "PASSED".equals(it.getValue().getLastStatus()))
+            .filter(it -> it.getValue().getThrowable() != null)  // ← Add this!
+            .collect(Collectors.toList());
 
     if (!flakyTests.isEmpty()) {
       // Print to console for this module
