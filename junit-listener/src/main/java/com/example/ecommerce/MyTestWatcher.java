@@ -64,7 +64,7 @@ public class MyTestWatcher implements TestWatcher, TestExecutionListener {
     // Display name examples: "[1] flaky@example.com", "[2] valid@example.com", "methodName()"
     if (displayName != null && !displayName.equals(methodName + "()")) {
       // This is a parameterized test - use display name with parameters
-      return className + "#" + methodName + displayName;
+      return className + "#"  + displayName;
     }
 
     return className + "#" + methodName;
