@@ -376,4 +376,51 @@ class UserServiceTest {
             assertThat(user.getEmail()).isEqualTo(email);
         }
     }
+
+    // NEW: Flaky test that fails TWICE and passes on the THIRD attempt
+    @Test
+    @DisplayName("Very flaky test - Fails 2 times, passes on 3rd attempt")
+    void veryFlakyTestFailsTwicePassesThird() throws BusinessException {
+        String testId = this.getClass().getName() + "#veryFlakyTestFailsTwicePassesThird";
+        java.nio.file.Path counterFile = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"),
+            "junit-retry-" + Integer.toHexString(testId.hashCode()) + ".txt");
+
+        try {
+            int attemptCount = 0;
+            if (java.nio.file.Files.exists(counterFile)) {
+                String content = new String(java.nio.file.Files.readAllBytes(counterFile));
+                attemptCount = Integer.parseInt(content.trim());
+            }
+
+            // Increment and save counter
+            attemptCount++;
+            java.nio.file.Files.write(counterFile, String.valueOf(attemptCount).getBytes());
+
+            if (attemptCount == 1) {
+                // First attempt - FAIL
+                counterFile.toFile().deleteOnExit();
+                User user = userService.createUser("veryflaky1", "veryflaky1@example.com", "Very", "Flaky");
+                assertThat(user.getStatus())
+                    .as("Attempt 1 of 3 - This WILL FAIL (expecting INACTIVE but got ACTIVE)")
+                    .isEqualTo(UserStatus.INACTIVE); // Wrong - will fail
+            } else if (attemptCount == 2) {
+                // Second attempt - FAIL AGAIN
+                User user = userService.createUser("veryflaky2", "veryflaky2@example.com", "Very", "Flaky");
+                assertThat(user.getFirstName())
+                    .as("Attempt 2 of 3 - This WILL FAIL AGAIN (expecting 'Wrong' but got 'Very')")
+                    .isEqualTo("Wrong"); // Wrong - will fail again
+            } else {
+                // Third attempt - PASS
+                java.nio.file.Files.deleteIfExists(counterFile);
+                User user = userService.createUser("veryflaky3", "veryflaky3@example.com", "Very", "Flaky");
+                assertThat(user.getStatus())
+                    .as("Attempt 3 of 3 - This WILL PASS")
+                    .isEqualTo(UserStatus.ACTIVE); // Correct - will pass
+                assertThat(user.getFirstName()).isEqualTo("Very");
+                assertThat(user.getLastName()).isEqualTo("Flaky");
+            }
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to manage retry counter file", e);
+        }
+    }
 }
