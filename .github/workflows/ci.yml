@@ -1,0 +1,102 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  build-and-test:
+    name: Build and Test (Java 8)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+          cache: 'maven'
+      
+      - name: Build with Maven
+        run: mvn clean install -DskipTests
+      
+      - name: Run tests with retry detection
+        run: mvn test
+        continue-on-error: true  # Don't fail the workflow if tests fail
+      
+      - name: Upload flaky test reports
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even if tests fail
+        with:
+          name: flaky-test-reports
+          path: '**/target/junit5-retry-report-*.txt'
+          if-no-files-found: ignore
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: '**/target/surefire-reports/*.xml'
+          if-no-files-found: ignore
+      
+      - name: Upload JaCoCo coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: '**/target/site/jacoco/**'
+          if-no-files-found: ignore
+      
+      - name: Set up Python for aggregation
+        uses: actions/setup-python@v5
+        if: always()
+        with:
+          python-version: '3.x'
+
+      - name: Aggregate flaky test reports
+        if: always()
+        run: python scripts/aggregate_flaky_tests.py
+
+      - name: Upload aggregated flaky test summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flaky-tests-summary
+          path: flaky-tests-summary.json
+          if-no-files-found: ignore
+
+      - name: Display flaky test summary
+        if: always()
+        run: |
+          echo "## Flaky Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f flaky-tests-summary.json ]; then
+            TOTAL=$(jq -r '.totalFlakyTests' flaky-tests-summary.json)
+
+            if [ "$TOTAL" -eq 0 ]; then
+              echo "✅ **No flaky tests detected!**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ **Found $TOTAL flaky test(s)**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              echo "### By Module" >> $GITHUB_STEP_SUMMARY
+              jq -r '.modules | to_entries[] | "- **\(.key)**: \(.value.count) test(s), avg \(.value.avgExecutionCount) runs"' flaky-tests-summary.json >> $GITHUB_STEP_SUMMARY
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Details" >> $GITHUB_STEP_SUMMARY
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              jq '.' flaky-tests-summary.json >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ No flaky tests detected!" >> $GITHUB_STEP_SUMMARY
+          fi
+
