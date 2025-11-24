@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("ValidationUtils Tests")
 class ValidationUtilsTest {
+
     
     @Test
     @DisplayName("Should return true for non-empty strings")
