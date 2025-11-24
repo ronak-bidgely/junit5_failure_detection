@@ -64,7 +64,7 @@ public class MyTestWatcher implements TestWatcher, TestExecutionListener {
     // Display name examples: "[1] flaky@example.com", "[2] valid@example.com", "methodName()"
     if (displayName != null && !displayName.equals(methodName + "()")) {
       // This is a parameterized test - use display name with parameters
-      return className + "#" + methodName + displayName;
+      return className + "#"  + displayName;
     }
 
     return className + "#" + methodName;
@@ -80,7 +80,6 @@ public class MyTestWatcher implements TestWatcher, TestExecutionListener {
     List<Entry<String, Data>> flakyTests = getTracker().entrySet().stream()
             .filter(it -> it.getValue().getCount() > 1)
             .filter(it -> "PASSED".equals(it.getValue().getLastStatus()))
-            .filter(it -> it.getValue().getThrowable() != null)
             .collect(Collectors.toList());
 
     if (!flakyTests.isEmpty()) {

@@ -27,7 +27,7 @@ jobs:
         run: mvn clean install -DskipTests
       
       - name: Run tests with retry detection
-        run: mvn test
+        run: mvn -fae test
         continue-on-error: true  # Don't fail the workflow if tests fail
       
       - name: Upload flaky test reports
