@@ -252,4 +252,44 @@ class ProductTest {
             .contains("stockQuantity=0")
             .contains("active=true");
     }
+
+    // Flaky test: fails first time, passes on retry
+    @Test
+    @DisplayName("Flaky test - Should fail first time but pass on retry")
+    void flakyTestDemonstratingRetry() {
+        String testId = this.getClass().getName() + "#flakyTestDemonstratingRetry";
+        java.nio.file.Path counterFile = java.nio.file.Paths.get(
+            System.getProperty("java.io.tmpdir"),
+            "junit-retry-" + Integer.toHexString(testId.hashCode()) + ".txt");
+
+        try {
+            int attemptCount = 0;
+            if (java.nio.file.Files.exists(counterFile)) {
+                String content = new String(java.nio.file.Files.readAllBytes(counterFile));
+                attemptCount = Integer.parseInt(content.trim());
+            }
+
+            attemptCount++;
+            java.nio.file.Files.write(counterFile, String.valueOf(attemptCount).getBytes());
+
+            if (attemptCount == 1) {
+                // First attempt - intentionally fail
+                counterFile.toFile().deleteOnExit();
+
+                // Wrong expectation: price should NOT be 100.00
+                assertThat(product.getPrice())
+                    .as("First attempt - this should fail and trigger retry")
+                    .isEqualTo(new java.math.BigDecimal("100.00"));
+            } else {
+                // Retry attempt(s) - correct expectation
+                java.nio.file.Files.deleteIfExists(counterFile);
+
+                assertThat(product.getPrice())
+                    .as("Retry attempt %d - this should pass", attemptCount)
+                    .isEqualTo(new java.math.BigDecimal("99.99"));
+            }
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to manage retry counter file", e);
+        }
+    }
 }
