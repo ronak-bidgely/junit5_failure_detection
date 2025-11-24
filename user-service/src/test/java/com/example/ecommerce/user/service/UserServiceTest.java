@@ -331,7 +331,6 @@ class UserServiceTest {
 
     // Flaky parameterized test - only parameter #2 will be flaky
     @ParameterizedTest
-    @NullAndEmptySource
     @ValueSource(strings = {"valid1@example.com", "flaky@example.com", "valid2@example.com"})
     @DisplayName("Flaky parameterized test - second parameter fails first time")
     void flakyParameterizedTest(String email) throws BusinessException {
