@@ -1,102 +1,147 @@
-name: CI - Build and Test
+name: Run Surefire On PR to task/PE-13296 branch
 
+# This workflow runs when a PR is opened/updated against the task/PE-13296 branch
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    branches:
+      - main
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  ACTIONS_STEP_DEBUG: true
 
 jobs:
-  build-and-test:
-    name: Build and Test (Java 8)
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up JDK 8
-        uses: actions/setup-java@v4
-        with:
-          java-version: '8'
-          distribution: 'temurin'
-          cache: 'maven'
-      
-      - name: Build with Maven
-        run: mvn clean install -DskipTests
-      
-      - name: Run tests with retry detection
-        run: mvn -fae test
-        continue-on-error: true  # Don't fail the workflow if tests fail
-      
-      - name: Upload flaky test reports
-        uses: actions/upload-artifact@v4
-        if: always()  # Upload even if tests fail
-        with:
-          name: flaky-test-reports
-          path: '**/target/junit5-retry-report-*.txt'
-          if-no-files-found: ignore
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: '**/target/surefire-reports/*.xml'
-          if-no-files-found: ignore
-      
-      - name: Upload JaCoCo coverage reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-reports
-          path: '**/target/site/jacoco/**'
-          if-no-files-found: ignore
-      
-      - name: Set up Python for aggregation
-        uses: actions/setup-python@v5
-        if: always()
-        with:
-          python-version: '3.x'
+  pr-test-coverage:
+    runs-on:
+      codebuild-gha-${{ github.run_id }}-${{ github.run_attempt }}
+      buildspec-override:true
+    permissions:
+      contents: read
+      id-token: write
 
+    steps:
+      # Step 1: Check out the repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Java (JDK 8)
+      - name: Set up JDK 8
+        uses: actions/setup-java@v3
+        with:
+          java-version: "8"
+          distribution: "corretto"
+
+      # Step 3: Configure Maven settings
+      - name: Configure Maven settings for S3
+        run: |
+          mkdir -p ~/.m2
+          echo '<settings>
+                  <servers>
+                    <server>
+                      <id>maven-repository2</id>
+                      <username>${{ secrets.MAVEN_USERNAME }}</username>
+                      <password>${{ secrets.MAVEN_PASSWORD }}</password>
+                    </server>
+                  </servers>
+              </settings>
+          ' > ~/.m2/settings.xml
+
+      # Step 4: Set Maven memory configurations to 2GB
+      - name: Set Maven Options
+        run: echo "MAVEN_OPTS=-Xmx2g" >> $GITHUB_ENV
+
+
+      # Step 6: Run Unit Tests for ALL modules with Surefire Retry
+      # Surefire will automatically retry failed tests up to 2 times to handle flaky tests
+      - name: Run Unit Tests
+        id: run_tests
+        continue-on-error: true
+        run: |
+          echo "Executing: mvn -Pjenkins-core-lib-all-tests -Dmaven.gitcommitid.skip=true clean test -Dcarrom.build.s3=bidgely-artifacts2 -Dsurefire.rerunFailingTestsCount=2 -ntp"
+          mvn -Pjenkins-core-lib-all-tests -Dmaven.gitcommitid.skip=true clean test -Dcarrom.build.s3=bidgely-artifacts2 -Dsurefire.rerunFailingTestsCount=2 -ntp
+
+      # Step 6a: Aggregate flaky test reports
+      # This runs the script to generate flaky-tests-summary.json from retry reports
       - name: Aggregate flaky test reports
         if: always()
-        run: python scripts/aggregate_flaky_tests.py
+        continue-on-error: true
+        run: .github/scripts/aggregate_flaky_tests.sh
 
+      # Step 6a-1: Upload aggregated flaky test summary to GitHub Artifacts
       - name: Upload aggregated flaky test summary
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: flaky-tests-summary
           path: flaky-tests-summary.json
           if-no-files-found: ignore
 
-      - name: Display flaky test summary
-        if: always()
+      # Step 6b: Collect and Archive Surefire Test Reports
+      # This collects all Surefire test reports including retry information
+      # Archives are timestamped to preserve historical test data
+      - name: Collect and Archive Surefire Reports
+        if: always() && env.ACT != 'true'
+        continue-on-error: true
         run: |
-          echo "## Flaky Test Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # For PR workflow, use a PR-specific target directory
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          TARGET_DIR="pr-${PR_NUMBER}"
 
-          if [ -f flaky-tests-summary.json ]; then
-            TOTAL=$(jq -r '.totalFlakyTests' flaky-tests-summary.json)
+          echo "Target directory: $TARGET_DIR"
+          echo "SUREFIRE_TARGET_DIR=$TARGET_DIR" >> $GITHUB_ENV
 
-            if [ "$TOTAL" -eq 0 ]; then
-              echo "✅ **No flaky tests detected!**" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "⚠️ **Found $TOTAL flaky test(s)**" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-
-              echo "### By Module" >> $GITHUB_STEP_SUMMARY
-              jq -r '.modules | to_entries[] | "- **\(.key)**: \(.value.count) test(s), avg \(.value.avgExecutionCount) runs"' flaky-tests-summary.json >> $GITHUB_STEP_SUMMARY
-
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Details" >> $GITHUB_STEP_SUMMARY
-              echo '```json' >> $GITHUB_STEP_SUMMARY
-              jq '.' flaky-tests-summary.json >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "✅ No flaky tests detected!" >> $GITHUB_STEP_SUMMARY
+          # Check if any Surefire reports exist
+          if ! find . -path "*/target/surefire-reports" -type d | grep -q .; then
+            echo "No Surefire reports found, skipping collection"
+            echo "SUREFIRE_REPORTS_EXIST=false" >> $GITHUB_ENV
+            exit 0
           fi
+
+          echo "Found Surefire reports, preparing archive..."
+
+          # Create a temporary directory for collecting reports
+          REPORTS_DIR="surefire-reports-archive"
+          mkdir -p "$REPORTS_DIR"
+
+          # Find all Surefire report directories and copy them
+          find . -path "*/target/surefire-reports" -type d | while read -r surefire_dir; do
+            # Extract module path (parent of target directory)
+            module_path=$(echo "$surefire_dir" | sed 's|/target/surefire-reports||')
+            module_name=$(basename "$module_path")
+
+            echo "Collecting Surefire reports from module: $module_name"
+
+            # Create a directory for this module's reports
+            mkdir -p "$REPORTS_DIR/$module_name"
+
+            # Copy the Surefire reports to the module's directory
+            if ! cp -r "$surefire_dir"/* "$REPORTS_DIR/$module_name/" 2>/dev/null; then
+              echo "Warning: Failed to copy reports from $module_name"
+            fi
+          done
+
+          # Check if any reports were collected
+          if [ -z "$(ls -A "$REPORTS_DIR" 2>/dev/null)" ]; then
+            echo "No Surefire reports collected"
+            echo "SUREFIRE_REPORTS_EXIST=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          echo "Surefire reports collected in $REPORTS_DIR directory"
+
+          # Create archive with timestamp to preserve history
+          TIMESTAMP=$(date +"%Y-%m-%d-%H-%M-%S")
+          COMMIT_SHA_SHORT="${{ github.sha }}"
+          COMMIT_SHA_SHORT="${COMMIT_SHA_SHORT:0:7}"
+          ARCHIVE_NAME="surefire-reports-${TIMESTAMP}-${COMMIT_SHA_SHORT}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C "$REPORTS_DIR" .
+          echo "Created archive: $ARCHIVE_NAME"
+          echo "SUREFIRE_REPORTS_EXIST=true" >> $GITHUB_ENV
+          echo "SUREFIRE_ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+          # Count retry files to provide summary
+          RETRY_COUNT=$(find "$REPORTS_DIR" -name "*-rerun*.xml" -o -name "*Rerun*.xml" | wc -l)
+          echo "Number of test retry files found: $RETRY_COUNT"
+          echo "SUREFIRE_RETRY_COUNT=$RETRY_COUNT" >> $GITHUB_ENV
 
