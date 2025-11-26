@@ -64,7 +64,7 @@ jobs:
       - name: Aggregate flaky test reports
         if: always()
         continue-on-error: true
-        run: .github/scripts/aggreagte_flaky_tests.sh
+        run: bash .github/scripts/aggreagte_flaky_tests.sh
 
       # Step 6a-1: Upload aggregated flaky test summary to GitHub Artifacts
       - name: Upload aggregated flaky test summary
