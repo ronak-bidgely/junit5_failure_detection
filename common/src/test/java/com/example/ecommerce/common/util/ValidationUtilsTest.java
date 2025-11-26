@@ -145,4 +145,44 @@ class ValidationUtilsTest {
         assertThat(ValidationUtils.isLengthInRange("hello", 1, 3)).isFalse();
         assertThat(ValidationUtils.isLengthInRange(null, 1, 5)).isFalse();
     }
+
+    // Flaky test: fails first time, passes on retry
+    @Test
+    @DisplayName("Flaky test - Should fail first time but pass on retry")
+    void flakyTestDemonstratingRetry() {
+        String testId = this.getClass().getName() + "#flakyTestDemonstratingRetry";
+        java.nio.file.Path counterFile = java.nio.file.Paths.get(
+            System.getProperty("java.io.tmpdir"),
+            "junit-retry-" + Integer.toHexString(testId.hashCode()) + ".txt");
+
+        try {
+            int attemptCount = 0;
+            if (java.nio.file.Files.exists(counterFile)) {
+                String content = new String(java.nio.file.Files.readAllBytes(counterFile));
+                attemptCount = Integer.parseInt(content.trim());
+            }
+
+            attemptCount++;
+            java.nio.file.Files.write(counterFile, String.valueOf(attemptCount).getBytes());
+
+            if (attemptCount == 1) {
+                // First attempt - intentionally fail
+                counterFile.toFile().deleteOnExit();
+
+                // Wrong expectation: email validation should NOT return false for valid email
+                assertThat(ValidationUtils.isValidEmail("test@example.com"))
+                    .as("First attempt - this should fail and trigger retry")
+                    .isFalse();
+            } else {
+                // Retry attempt(s) - correct expectation
+                java.nio.file.Files.deleteIfExists(counterFile);
+
+                assertThat(ValidationUtils.isValidEmail("test@example.com"))
+                    .as("Retry attempt %d - this should pass", attemptCount)
+                    .isTrue();
+            }
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to manage retry counter file", e);
+        }
+    }
 }
