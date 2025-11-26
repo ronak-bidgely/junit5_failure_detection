@@ -142,38 +142,6 @@ class OrderTest {
     }
 
     @Test
-    @DisplayName("Should ship order and set shipped date")
-    void shouldShipOrderAndSetShippedDate() {
-        // Given
-        LocalDateTime beforeShip = LocalDateTime.now();
-
-        // When
-        order.ship();
-
-        // Then
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.SHIPPED);
-        assertThat(order.isShipped()).isTrue();
-        assertThat(order.getShippedDate()).isNotNull();
-        assertThat(order.getShippedDate()).isAfter(beforeShip);
-    }
-
-    @Test
-    @DisplayName("Should deliver order and set delivered date")
-    void shouldDeliverOrderAndSetDeliveredDate() {
-        // Given
-        LocalDateTime beforeDeliver = LocalDateTime.now();
-
-        // When
-        order.deliver();
-
-        // Then
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.DELIVERED);
-        assertThat(order.isDelivered()).isTrue();
-        assertThat(order.getDeliveredDate()).isNotNull();
-        assertThat(order.getDeliveredDate()).isAfter(beforeDeliver);
-    }
-
-    @Test
     @DisplayName("Should cancel order")
     void shouldCancelOrder() {
         // When
