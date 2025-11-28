@@ -36,8 +36,8 @@ for file in "${files[@]}"; do
   module="$(basename "$(dirname "$(dirname "${file}")")")"
 
   # Read the report and add module/file info to each test
-  jq --arg module "${module}" --arg file "${file}" '
-    map(. + {module: $module, reportFile: $file})
+  jq --arg moduleName "${module}" --arg fileName "${file}" '
+    map(. + {module: $moduleName, reportFile: $fileName})
   ' "${file}" > "${OUTPUT_FILE}.${module}.tmp"
 done
 
